@@ -21,7 +21,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdbool.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -76,14 +76,144 @@ const uint8_t segments[] = {
   SEG_A | SEG_B | SEG_C | SEG_D | SEG_E | SEG_F | SEG_G,// 8
 	SEG_A | SEG_B | SEG_C | SEG_D | SEG_F | SEG_G// 9
 };
-
+static uint8_t seconds = 0U;
+static uint8_t minutes = 0U;
+static uint8_t hours = 0U;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
+void clear_segment(const uint16_t DIG_number)
+{
+  HAL_GPIO_WritePin(GPIOG, ALL_SEGMENTS, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, DIG_number, GPIO_PIN_RESET);
+}
 
+void send_digit_to_LED(const uint16_t value, const uint16_t DIG_number, const uint8_t position, bool isDot)
+{
+  uint8_t digit = 0U;
+  if (position % 2 != 0)
+  {
+    digit = (uint8_t)((float)value / 10.0F);
+  }
+  else
+  {
+    digit = (uint8_t)(value % 10);
+  }    
+
+  clear_segment(DIG_number);
+  if(isDot == true){
+    HAL_GPIO_WritePin(GPIOG, segments[digit] | SEG_DP, GPIO_PIN_SET);
+  }
+  else
+  {
+    HAL_GPIO_WritePin(GPIOG, segments[digit], GPIO_PIN_SET);
+  }
+  HAL_GPIO_WritePin(GPIOB, DIG_number, GPIO_PIN_SET);
+}
+
+void update_led_display(const uint32_t frequency)
+{
+  static uint32_t counter = 0U;
+  static uint32_t max_counter = 0U;
+  static uint32_t currentDigitposition = 1U;
+  // htim2.Init.Prescaler = 999;
+  // htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  // htim2.Init.Period = 4;
+  // 4000 000 / 10000 / 4 = 1000
+  max_counter = (uint32_t)((float)HAL_RCC_GetPCLK1Freq()/(float)(htim2.Init.Prescaler + 1)/(float)htim2.Init.Period/frequency);
+  counter++;
+  if(counter >= max_counter)
+  {
+     //If button is pressed, show minutes:seconds.
+    if (HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_15) == GPIO_PIN_RESET)
+    {
+      if (currentDigitposition == 1) 
+      {
+        send_digit_to_LED(minutes, DIG_1, 1, false);
+      }
+      else if (currentDigitposition == 2) 
+      {
+        send_digit_to_LED(minutes, DIG_2, 2, true);
+      }
+      else if (currentDigitposition == 3)
+      {
+        send_digit_to_LED(seconds, DIG_3, 3, false);
+      }
+      else if (currentDigitposition == 4)
+      {
+        send_digit_to_LED(seconds, DIG_4, 4, false);
+      }      
+    }
+    else
+    {
+      if (currentDigitposition == 1) 
+      {
+        send_digit_to_LED(hours, DIG_1, 1, false);
+      }
+      else if (currentDigitposition == 2)
+      {
+        send_digit_to_LED(hours, DIG_2, 2, true);
+      }
+      else if (currentDigitposition == 3)
+      {
+        send_digit_to_LED(minutes, DIG_3, 3, false); 
+      }
+      else if (currentDigitposition == 4)
+      {
+        if (uwTick < RIGHT_DOT_DELAY)
+        {
+          send_digit_to_LED(minutes, DIG_4, 4, true); 
+        }
+        else
+        {
+          send_digit_to_LED(minutes, DIG_4, 4, false); 
+        }
+      }
+    }
+    currentDigitposition++;
+    if(currentDigitposition > MAX_NUMBER_OF_DIGIT)
+    {
+    currentDigitposition = 1U;
+    }
+    counter = 0;
+  }
+}
+
+void update_time(const float frequency)
+{
+  static uint32_t counter = 0U;
+  static uint32_t max_counter = 0U;
+  max_counter = (uint32_t)((float)HAL_RCC_GetPCLK1Freq()/(float)(htim2.Init.Prescaler + 1)/(float)htim2.Init.Period/frequency);
+  counter++;
+  if (counter >= max_counter)
+  {
+    if (uwTick >= MAX_MILISECONDS)
+    {
+      uwTick = 0U;
+      seconds++;
+    }
+    if (seconds >= MAX_SECONDS)
+    {
+      seconds = 0U;
+      minutes++;
+    }
+    if (minutes >= MAX_MINUTES)
+    {
+      minutes = 0U;
+      hours++;
+    }
+    if (hours >= MAX_HOURS)
+    {
+      seconds = 0U;
+      minutes = 0U;
+      hours = 0U;
+    }
+    counter = 0;  
+  }
+}
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -249,114 +379,8 @@ static void MX_TIM2_Init(void)
 /* USER CODE BEGIN 4 */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-  static uint16_t miliseconds = 0U;
-  static uint8_t seconds = 0U;
-  static uint8_t minutes = 0U;
-  static uint8_t hours = 0U;
-  uint8_t digit = 0U;
-  static uint8_t currentDigitposition = 1U;
-
-  miliseconds++;
-
-  if (miliseconds >= MAX_MILISECONDS)
-  {
-	  miliseconds = 0U;
-	  seconds++;
-  }
-  if (seconds >= MAX_SECONDS)
-  {
-	  seconds = 0U;
-	  minutes++;
-  }
-  if (minutes >= MAX_MINUTES)
-  {
-	  minutes = 0U;
-	  hours++;
-  }
-  if (hours >= MAX_HOURS)
-  {
-	  miliseconds = 0U;
-	  seconds = 0U;
-	  minutes = 0U;
-	  hours = 0U;
-  }
-
-  //If button is pressed, show minutes:seconds.
-  if(HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_15) == GPIO_PIN_RESET)
-  {
-    if (1U == currentDigitposition)	  {
-		  digit = (uint8_t)(minutes / 10);
-      HAL_GPIO_WritePin(GPIOG, ALL_SEGMENTS, GPIO_PIN_RESET);
-      HAL_GPIO_WritePin(GPIOB, DIG_1, GPIO_PIN_RESET);
-		  HAL_GPIO_WritePin(GPIOB, segments[digit], GPIO_PIN_SET);
-		  HAL_GPIO_WritePin(GPIOB, DIG_1, GPIO_PIN_SET);
-	  }
-    if (2U == currentDigitposition)	  {
-		  digit = (uint8_t)(minutes % 10);
-      HAL_GPIO_WritePin(GPIOG, ALL_SEGMENTS, GPIO_PIN_RESET);
-      HAL_GPIO_WritePin(GPIOB, DIG_2, GPIO_PIN_RESET);
-		  HAL_GPIO_WritePin(GPIOB, segments[digit] | SEG_DP, GPIO_PIN_SET);
-		  HAL_GPIO_WritePin(GPIOB, DIG_2, GPIO_PIN_SET);
-	  }
-    if (3U == currentDigitposition)	  {
-		  digit = (uint8_t)(seconds / 10);
-      HAL_GPIO_WritePin(GPIOG, ALL_SEGMENTS, GPIO_PIN_RESET);
-      HAL_GPIO_WritePin(GPIOB, DIG_3, GPIO_PIN_RESET);
-		  HAL_GPIO_WritePin(GPIOB, segments[digit], GPIO_PIN_SET);
-		  HAL_GPIO_WritePin(GPIOB, DIG_3, GPIO_PIN_SET);
-	  }
-    if (4U == currentDigitposition)	  {
-		  digit = (uint8_t)(seconds % 10);
-      HAL_GPIO_WritePin(GPIOG, ALL_SEGMENTS, GPIO_PIN_RESET);
-      HAL_GPIO_WritePin(GPIOB, DIG_4, GPIO_PIN_RESET);
-		  HAL_GPIO_WritePin(GPIOB, segments[digit], GPIO_PIN_SET);
-		  HAL_GPIO_WritePin(GPIOB, DIG_4, GPIO_PIN_SET);
-	  }
-  }
-  else
-  {
-	  if (1U == currentDigitposition)	  {
-		  digit = (uint8_t)(hours / 10);
-      HAL_GPIO_WritePin(GPIOG, ALL_SEGMENTS, GPIO_PIN_RESET);
-      HAL_GPIO_WritePin(GPIOB, DIG_1, GPIO_PIN_RESET);
-		  HAL_GPIO_WritePin(GPIOB, segments[digit], GPIO_PIN_SET);
-		  HAL_GPIO_WritePin(GPIOB, DIG_1, GPIO_PIN_SET);
-	  }
-    if (2U == currentDigitposition)	  {
-		  digit = (uint8_t)(hours % 10);
-      HAL_GPIO_WritePin(GPIOG, ALL_SEGMENTS, GPIO_PIN_RESET);
-      HAL_GPIO_WritePin(GPIOB, DIG_2, GPIO_PIN_RESET);
-		  HAL_GPIO_WritePin(GPIOB, segments[digit] | SEG_DP, GPIO_PIN_SET);
-		  HAL_GPIO_WritePin(GPIOB, DIG_2, GPIO_PIN_SET);
-	  }
-    if (3U == currentDigitposition)	  {
-		  digit = (uint8_t)(minutes / 10);
-      HAL_GPIO_WritePin(GPIOG, ALL_SEGMENTS, GPIO_PIN_RESET);
-      HAL_GPIO_WritePin(GPIOB, DIG_3, GPIO_PIN_RESET);
-		  HAL_GPIO_WritePin(GPIOB, segments[digit], GPIO_PIN_SET);
-		  HAL_GPIO_WritePin(GPIOB, DIG_3, GPIO_PIN_SET);
-	  }
-    if (4U == currentDigitposition)	  {
-		  digit = (uint8_t)(minutes % 10);
-      HAL_GPIO_WritePin(GPIOG, ALL_SEGMENTS, GPIO_PIN_RESET);
-      HAL_GPIO_WritePin(GPIOB, DIG_4, GPIO_PIN_RESET);
-      if(miliseconds < RIGHT_DOT_DELAY)
-      {
-        HAL_GPIO_WritePin(GPIOB, segments[digit] | SEG_DP, GPIO_PIN_SET);
-      }
-      else
-      {
-		    HAL_GPIO_WritePin(GPIOB, segments[digit], GPIO_PIN_SET);
-      }
-      HAL_GPIO_WritePin(GPIOB, DIG_4, GPIO_PIN_SET);
-	  }
-  }
-
-  currentDigitposition++;
-  if(currentDigitposition > MAX_NUMBER_OF_DIGIT)
-  {
-    currentDigitposition = 1U;
-  }
+  update_time(1000);
+  update_led_display(1000);
 }
 
 /* USER CODE END 4 */
